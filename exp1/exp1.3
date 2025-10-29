@@ -1,0 +1,231 @@
+#include <iostream>
+#include <vector>
+#include <stack>
+#include <algorithm>
+#include <random>
+#include <chrono>
+#include <iomanip>
+using namespace std;
+
+class Solution {
+public:
+    int largestRectangleArea(vector<int>& heights) {
+        int n = heights.size();
+        if (n == 0) return 0;
+        if (n == 1) return heights[0];
+        
+        vector<int> newHeights(n + 2, 0);
+        for (int i = 0; i < n; i++) {
+            newHeights[i + 1] = heights[i];
+        }
+        
+        stack<int> stk;
+        int maxArea = 0;
+        
+        for (int i = 0; i < newHeights.size(); i++) {
+            while (!stk.empty() && newHeights[i] < newHeights[stk.top()]) {
+                int height = newHeights[stk.top()];
+                stk.pop();
+                int width = i - stk.top() - 1;
+                maxArea = max(maxArea, height * width);
+            }
+            stk.push(i);
+        }
+        
+        return maxArea;
+    }
+    
+    int largestRectangleAreaBruteForce(vector<int>& heights) {
+        int n = heights.size();
+        if (n == 0) return 0;
+        
+        int maxArea = 0;
+        
+        for (int i = 0; i < n; i++) {
+            int minHeight = heights[i];
+            for (int j = i; j < n; j++) {
+                minHeight = min(minHeight, heights[j]);
+                int area = minHeight * (j - i + 1);
+                maxArea = max(maxArea, area);
+            }
+        }
+        
+        return maxArea;
+    }
+};
+
+class TestUtils {
+public:
+    static vector<vector<int>> generateTestData(int numTests = 10, int maxLength = 100000, int maxHeight = 10000) {
+        vector<vector<int>> testData;
+        unsigned seed = chrono::system_clock::now().time_since_epoch().count();
+        default_random_engine generator(seed);
+        
+        uniform_int_distribution<int> lengthDist(1, maxLength);
+        uniform_int_distribution<int> heightDist(0, maxHeight);
+        
+        for (int i = 0; i < numTests; i++) {
+            int length = (i == 0) ? 6 : (i == 1) ? 2 : lengthDist(generator);
+            vector<int> heights(length);
+            
+            for (int j = 0; j < length; j++) {
+                heights[j] = heightDist(generator);
+            }
+            
+            testData.push_back(heights);
+        }
+        
+        if (numTests >= 2) {
+            testData[0] = {2, 1, 5, 6, 2, 3};
+            testData[1] = {2, 4};
+        }
+        
+        return testData;
+    }
+    
+    static void printHistogram(const vector<int>& heights, int maxArea = -1) {
+        if (heights.size() > 20) {
+            cout << "数据量过大，不进行可视化" << endl;
+            return;
+        }
+        
+        int maxHeight = *max_element(heights.begin(), heights.end());
+        
+        for (int h = maxHeight; h > 0; h--) {
+            cout << setw(3) << h << "| ";
+            for (int height : heights) {
+                if (height >= h) {
+                    cout << "█ ";
+                } else {
+                    cout << "  ";
+                }
+            }
+            cout << endl;
+        }
+        
+        cout << "   +";
+        for (int i = 0; i < heights.size(); i++) {
+            cout << "--";
+        }
+        cout << endl;
+        
+        cout << "    ";
+        for (int i = 0; i < heights.size(); i++) {
+            cout << setw(2) << i;
+        }
+        cout << endl;
+        
+        cout << "    ";
+        for (int height : heights) {
+            cout << setw(2) << height;
+        }
+        cout << endl;
+        
+        if (maxArea != -1) {
+            cout << "最大矩形面积: " << maxArea << endl;
+        }
+    }
+    
+    static void runTests() {
+        Solution sol;
+        auto testData = generateTestData(10);
+        
+        cout << "=== 柱状图最大矩形面积测试 ===" << endl;
+        cout << "生成 " << testData.size() << " 组测试数据" << endl << endl;
+        
+        for (int i = 0; i < testData.size(); i++) {
+            cout << "测试用例 " << (i + 1) << ":" << endl;
+            cout << "输入: heights = [";
+            for (int j = 0; j < min(20, (int)testData[i].size()); j++) {
+                if (j > 0) cout << ",";
+                cout << testData[i][j];
+            }
+            if (testData[i].size() > 20) {
+                cout << ",...";
+            }
+            cout << "]" << endl;
+            cout << "数据长度: " << testData[i].size() << endl;
+            
+            auto start = chrono::high_resolution_clock::now();
+            int result = sol.largestRectangleArea(testData[i]);
+            auto end = chrono::high_resolution_clock::now();
+            auto duration = chrono::duration_cast<chrono::microseconds>(end - start);
+            
+            int bruteResult = result;
+            if (testData[i].size() <= 1000) {
+                bruteResult = sol.largestRectangleAreaBruteForce(testData[i]);
+            }
+            
+            cout << "最大矩形面积: " << result;
+            if (testData[i].size() <= 1000) {
+                if (result == bruteResult) {
+                    cout << " ✓ (验证正确)";
+                } else {
+                    cout << " ✗ (验证错误，暴力解法结果: " << bruteResult << ")";
+                }
+            }
+            cout << endl;
+            
+            cout << "计算时间: " << duration.count() << " 微秒" << endl;
+            
+            if (testData[i].size() <= 20) {
+                cout << "柱状图:" << endl;
+                printHistogram(testData[i], result);
+            }
+            
+            cout << endl << string(50, '-') << endl;
+        }
+    }
+};
+
+void testExamples() {
+    Solution sol;
+    
+    cout << "=== 题目示例测试 ===" << endl;
+    
+    vector<int> heights1 = {2, 1, 5, 6, 2, 3};
+    int result1 = sol.largestRectangleArea(heights1);
+    cout << "示例1 - 输入: [2,1,5,6,2,3]" << endl;
+    cout << "预期输出: 10" << endl;
+    cout << "实际输出: " << result1;
+    if (result1 == 10) {
+        cout << " ✓ 正确" << endl;
+    } else {
+        cout << " ✗ 错误" << endl;
+    }
+    TestUtils::printHistogram(heights1, result1);
+    cout << endl;
+    
+    vector<int> heights2 = {2, 4};
+    int result2 = sol.largestRectangleArea(heights2);
+    cout << "示例2 - 输入: [2,4]" << endl;
+    cout << "预期输出: 4" << endl;
+    cout << "实际输出: " << result2;
+    if (result2 == 4) {
+        cout << " ✓ 正确" << endl;
+    } else {
+        cout << " ✗ 错误" << endl;
+    }
+    TestUtils::printHistogram(heights2, result2);
+    cout << endl;
+}
+
+int main() {
+    testExamples();
+    
+    TestUtils::runTests();
+    
+    cout << "=== 性能测试（大规模数据）===" << endl;
+    Solution sol;
+    vector<int> largeData(100000, 100);
+    auto start = chrono::high_resolution_clock::now();
+    int result = sol.largestRectangleArea(largeData);
+    auto end = chrono::high_resolution_clock::now();
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start);
+    
+    cout << "数据规模: 100000个柱子" << endl;
+    cout << "最大矩形面积: " << result << endl;
+    cout << "计算时间: " << duration.count() << " 毫秒" << endl;
+    
+    return 0;
+}
