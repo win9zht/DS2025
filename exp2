@@ -1,0 +1,358 @@
+#include <iostream>
+#include <string>
+#include <cstring>
+#include <queue>
+#include <vector>
+#include <map>
+#include <algorithm>
+#include <fstream>
+
+using namespace std;
+
+class Bitmap {
+private:
+    unsigned char* M;
+    int N, _sz;
+
+protected:
+    void init(int n) {
+        N = (n + 7) / 8;
+        M = new unsigned char[N]();  
+        _sz = 0;
+    }
+
+public:
+    Bitmap(int n = 64) { init(n); }  
+    
+    Bitmap(const char* file, int n = 64) {
+        init(n);
+        FILE* fp = fopen(file, "rb");
+        if (fp) {
+            size_t read_count = fread(M, sizeof(char), N, fp);
+            fclose(fp);
+            _sz = 0;
+            for (int k = 0; k < n; k++) {
+                if (test(k)) _sz++;
+            }
+        }
+    }
+    
+    Bitmap(const Bitmap&) = delete;
+    Bitmap& operator=(const Bitmap&) = delete;
+    
+    ~Bitmap() {
+        delete[] M;
+        M = nullptr;
+        _sz = 0;
+    }
+    
+    int size() const { return _sz; }
+    
+    void set(int k) {
+        expand(k);
+        if (!test(k)) {  
+            _sz++;
+        }
+        M[k >> 3] |= (0x80 >> (k & 0x07));
+    }
+    
+    void clear(int k) {
+        if (k >= 8 * N) return;
+        if (test(k)) {
+            _sz--;
+        }
+        M[k >> 3] &= ~(0x80 >> (k & 0x07));
+    }
+    
+    bool test(int k) const {
+        if (k >= 8 * N) return false;
+        return M[k >> 3] & (0x80 >> (k & 0x07));
+    }
+    
+    void expand(int k) {
+        if (k < 8 * N) return;
+        int new_N = (2 * k + 7) / 8;  
+        unsigned char* new_M = new unsigned char[new_N]();
+        
+        if (M) {
+            memcpy(new_M, M, N);
+            delete[] M;
+        }
+        
+        M = new_M;
+        N = new_N;
+    }
+    
+    string toString(int n) const {
+        if (n <= 0) return "";
+        string s(n, '0');
+        for (int i = 0; i < n; i++) {
+            if (test(i)) s[i] = '1';
+        }
+        return s;
+    }
+};
+
+class HuffCode {
+private:
+    Bitmap _bits;
+    int _length;
+
+public:
+    HuffCode() : _bits(256), _length(0) {}  
+    
+    void append(bool bit) {
+        if (bit) {
+            _bits.set(_length);
+        } else {
+            _bits.clear(_length);
+        }
+        _length++;
+    }
+    
+    int length() const { return _length; }
+    
+    string toString() const {
+        return _bits.toString(_length);
+    }
+    
+    HuffCode(const HuffCode& other)
+        : _bits(256), _length(other._length) {
+        for (int i = 0; i < _length; i++) {
+            if (other._bits.test(i)) {
+                _bits.set(i);
+            }
+        }
+    }
+    
+    HuffCode& operator=(const HuffCode& other) {
+        if (this != &other) {
+            _length = other._length;
+            for (int i = 0; i < _length; i++) {
+                if (other._bits.test(i)) {
+                    _bits.set(i);
+                } else {
+                    _bits.clear(i);
+                }
+            }
+        }
+        return *this;
+    }
+};
+
+struct BinNode {
+    char data;
+    int freq;
+    BinNode* left;
+    BinNode* right;
+    
+    BinNode(char d, int f) : data(d), freq(f), left(nullptr), right(nullptr) {}
+    BinNode(int f, BinNode* l, BinNode* r) : data('\0'), freq(f), left(l), right(r) {}
+    
+    bool isLeaf() const {
+        return left == nullptr && right == nullptr;
+    }
+};
+
+class BinTree {
+private:
+    BinNode* _root;
+
+    void clearRecursive(BinNode* node) {
+        if (node) {
+            clearRecursive(node->left);
+            clearRecursive(node->right);
+            delete node;
+        }
+    }
+
+    BinTree(const BinTree&) = delete;
+    BinTree& operator=(const BinTree&) = delete;
+
+public:
+    BinTree() : _root(nullptr) {}
+    BinTree(BinNode* root) : _root(root) {}
+    
+    ~BinTree() {
+        clearRecursive(_root);
+    }
+    
+    BinNode* root() const { return _root; }
+    
+    void preOrder(BinNode* node) const {
+        if (node) {
+            if (node->isLeaf()) {
+                cout << "'" << node->data << "'(" << node->freq << ") ";
+            } else {
+                cout << "(" << node->freq << ") ";
+            }
+            preOrder(node->left);
+            preOrder(node->right);
+        }
+    }
+    
+    void display() const {
+        cout << "Tree structure (pre-order): ";
+        preOrder(_root);
+        cout << endl;
+    }
+};
+
+class HuffTree {
+private:
+    BinTree* _tree;
+    map<char, HuffCode> _codeTable;
+
+    struct Compare {
+        bool operator()(BinNode* a, BinNode* b) {
+            return a->freq > b->freq;
+        }
+    };
+
+    void buildCodeTable(BinNode* node, HuffCode code) {
+        if (node->isLeaf()) {
+            _codeTable[node->data] = code;
+            return;
+        }
+        
+        if (node->left) {
+            HuffCode leftCode = code;
+            leftCode.append(false);
+            buildCodeTable(node->left, leftCode);
+        }
+        
+        if (node->right) {
+            HuffCode rightCode = code;
+            rightCode.append(true);
+            buildCodeTable(node->right, rightCode);
+        }
+    }
+
+    HuffTree(const HuffTree&) = delete;
+    HuffTree& operator=(const HuffTree&) = delete;
+
+public:
+    HuffTree() : _tree(nullptr) {}
+    
+    ~HuffTree() {
+        delete _tree;
+    }
+    
+    void buildFromText(const string& text) {
+        delete _tree;
+        _tree = nullptr;
+        _codeTable.clear();
+        
+        map<char, int> freqMap;
+        for (char c : text) {
+            if (isalpha(c)) {
+                char lowerC = tolower(c);
+                freqMap[lowerC]++;
+            }
+        }
+
+        priority_queue<BinNode*, vector<BinNode*>, Compare> pq;
+        
+        for (auto& pair : freqMap) {
+            pq.push(new BinNode(pair.first, pair.second));
+        }
+        
+        if (pq.empty()) {
+            return;
+        }
+        
+        while (pq.size() > 1) {
+            BinNode* left = pq.top(); pq.pop();
+            BinNode* right = pq.top(); pq.pop();
+            
+            BinNode* parent = new BinNode(left->freq + right->freq, left, right);
+            pq.push(parent);
+        }
+        
+        _tree = new BinTree(pq.top());
+        
+        HuffCode initialCode;
+        buildCodeTable(_tree->root(), initialCode);
+    }
+    
+    string encode(const string& word) const {
+        string result;
+        for (char c : word) {
+            char lowerC = tolower(c);
+            auto it = _codeTable.find(lowerC);
+            if (it != _codeTable.end()) {
+                result += it->second.toString();
+            } else {
+                result += "?";
+            }
+        }
+        return result;
+    }
+    
+    void displayCodeTable() const {
+        cout << "Huffman Code Table:" << endl;
+        vector<pair<char, string>> codes;
+        for (const auto& pair : _codeTable) {
+            codes.emplace_back(pair.first, pair.second.toString());
+        }
+        sort(codes.begin(), codes.end(),
+             [](const pair<char, string>& a, const pair<char, string>& b) {
+                 return a.second.length() < b.second.length();
+             });
+        for (const auto& item : codes) {
+            cout << "'" << item.first << "': " << item.second
+                 << " (length: " << item.second.length() << ")" << endl;
+        }
+    }
+    
+    void displayTree() const {
+        if (_tree) {
+            _tree->display();
+        } else {
+            cout << "Tree is empty" << endl;
+        }
+    }
+};
+
+const string MLK_SPEECH =
+    "i have a dream that one day this nation will rise up and live out the true meaning of its creed we hold these truths to be self evident that all men are created equal "
+    "i have a dream that one day on the red hills of georgia the sons of former slaves and the sons of former slave owners will be able to sit down together at the table of brotherhood "
+    "i have a dream that one day even the state of mississippi a state sweltering with the heat of injustice sweltering with the heat of oppression will be transformed into an oasis of freedom and justice "
+    "i have a dream that my four little children will one day live in a nation where they will not be judged by the color of their skin but by the content of their character "
+    "i have a dream today";
+
+int main() {
+    cout << "=== Huffman Coding Tree Test ===" << endl;
+    
+    try {
+        HuffTree huffTree;
+        huffTree.buildFromText(MLK_SPEECH);
+        
+        cout << "\nHuffman Code Table:" << endl;
+        huffTree.displayCodeTable();
+        
+        cout << "\nTree Structure:" << endl;
+        huffTree.displayTree();
+        
+        vector<string> testWords = {"dream", "freedom", "justice", "brotherhood", "test"};
+        
+        cout << "\n=== Word Encoding ===" << endl;
+        for (const string& word : testWords) {
+            string encoded = huffTree.encode(word);
+            cout << word << " -> " << encoded << " (bits: " << encoded.length() << ")" << endl;
+        }
+        
+        string phrase = "i have a dream";
+        string encodedPhrase = huffTree.encode(phrase);
+        cout << "\n=== Phrase Encoding ===" << endl;
+        cout << "\"" << phrase << "\" -> " << endl;
+        cout << encodedPhrase << " (total bits: " << encodedPhrase.length() << ")" << endl;
+        
+    } catch (const exception& e) {
+        cerr << "Error: " << e.what() << endl;
+        return 1;
+    }
+    
+    cout << "\nTest completed successfully!" << endl;
+    return 0;
+}
