@@ -1,1 +1,198 @@
+#include <iostream>
+#include <vector>
+#include <random>
+#include <chrono>
+#include <algorithm>
+#include <cmath>
 
+struct BBox {
+    float x1, y1; 
+    float x2, y2; 
+    float score;  
+
+    BBox(float x1_, float y1_, float x2_, float y2_, float s_)
+        : x1(x1_), y1(y1_), x2(x2_), y2(y2_), score(s_) {}
+};
+
+float calculateIoU(const BBox& a, const BBox& b) {
+    float inter_x1 = std::max(a.x1, b.x1);
+    float inter_y1 = std::max(a.y1, b.y1);
+    float inter_x2 = std::min(a.x2, b.x2);
+    float inter_y2 = std::min(a.y2, b.y2);
+
+    float inter_area = std::max(0.0f, inter_x2 - inter_x1) * std::max(0.0f, inter_y2 - inter_y1);
+    float area_a = (a.x2 - a.x1) * (a.y2 - a.y1);
+    float area_b = (b.x2 - b.x1) * (b.y2 - b.y1);
+    return inter_area / (area_a + area_b - inter_area);
+}
+
+void quickSort(std::vector<BBox>& arr, int left, int right) {
+    if (left >= right) return;
+    float pivot = arr[(left + right) / 2].score;
+    int i = left, j = right;
+    while (i <= j) {
+        while (arr[i].score > pivot) i++;
+        while (arr[j].score < pivot) j--;
+        if (i <= j) {
+            std::swap(arr[i], arr[j]);
+            i++; j--;
+        }
+    }
+    quickSort(arr, left, j);
+    quickSort(arr, right, i);
+}
+
+void merge(std::vector<BBox>& arr, int left, int mid, int right) {
+    int n1 = mid - left + 1;
+    int n2 = right - mid;
+    std::vector<BBox> L(arr.begin() + left, arr.begin() + mid + 1);
+    std::vector<BBox> R(arr.begin() + mid + 1, arr.begin() + right + 1);
+
+    int i = 0, j = 0, k = left;
+    while (i < n1 && j < n2) {
+        if (L[i].score >= R[j].score) {
+            arr[k] = L[i];
+            i++;
+        } else {
+            arr[k] = R[j];
+            j++;
+        }
+        k++;
+    }
+    while (i < n1) arr[k++] = L[i++];
+    while (j < n2) arr[k++] = R[j++];
+}
+void mergeSort(std::vector<BBox>& arr, int left, int right) {
+    if (left >= right) return;
+    int mid = left + (right - left) / 2;
+    mergeSort(arr, left, mid);
+    mergeSort(arr, mid + 1, right);
+    merge(arr, left, mid, right);
+}
+
+void bubbleSort(std::vector<BBox>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j].score < arr[j + 1].score) {
+                std::swap(arr[j], arr[j + 1]);
+            }
+        }
+    }
+}
+
+void selectionSort(std::vector<BBox>& arr) {
+    int n = arr.size();
+    for (int i = 0; i < n - 1; i++) {
+        int max_idx = i;
+        for (int j = i + 1; j < n; j++) {
+            if (arr[j].score > arr[max_idx].score) {
+                max_idx = j;
+            }
+        }
+        std::swap(arr[i], arr[max_idx]);
+    }
+}
+
+std::vector<BBox> nms(std::vector<BBox> bboxes, float iou_threshold,
+                      void (*sortFunc)(std::vector<BBox>&, int, int)) {
+    std::vector<BBox> result;
+    if (bboxes.empty()) return result;
+
+    sortFunc(bboxes, 0, bboxes.size() - 1);
+
+    while (!bboxes.empty()) {
+        BBox top = bboxes[0];
+        result.push_back(top);
+        bboxes.erase(bboxes.begin());
+
+        for (auto it = bboxes.begin(); it != bboxes.end();) {
+            if (calculateIoU(top, *it) > iou_threshold) {
+                it = bboxes.erase(it);
+            } else {
+                it++;
+            }
+        }
+    }
+    return result;
+}
+
+std::vector<BBox> generateRandomBBoxes(int count, float img_w = 640, float img_h = 640) {
+    std::vector<BBox> bboxes;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> pos_dist(0, img_w);
+    std::uniform_real_distribution<float> size_dist(20, 100);
+    std::uniform_real_distribution<float> score_dist(0, 1);
+
+    for (int i = 0; i < count; i++) {
+        float x1 = pos_dist(gen);
+        float y1 = pos_dist(gen);
+        float w = size_dist(gen);
+        float h = size_dist(gen);
+        float x2 = std::min(x1 + w, img_w);
+        float y2 = std::min(y1 + h, img_h);
+        bboxes.emplace_back(x1, y1, x2, y2, score_dist(gen));
+    }
+    return bboxes;
+}
+
+std::vector<BBox> generateClusteredBBoxes(int count, float img_w = 640, float img_h = 640) {
+    std::vector<BBox> bboxes;
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<float> cluster_dist(100, 540);
+    std::normal_distribution<float> pos_noise(0, 30);            
+    std::normal_distribution<float> size_noise(20, 10);          
+    std::uniform_real_distribution<float> score_dist(0, 1);
+
+    int cluster_num = 2 + (gen() % 2);
+    std::vector<std::pair<float, float>> centers;
+    for (int c = 0; c < cluster_num; c++) {
+        centers.emplace_back(cluster_dist(gen), cluster_dist(gen));
+    }
+
+    for (int i = 0; i < count; i++) {
+        auto& center = centers[gen() % cluster_num];
+        float x1 = std::max(0.0f, center.first + pos_noise(gen));
+        float y1 = std::max(0.0f, center.second + pos_noise(gen));
+        float w = std::max(10.0f, 50 + size_noise(gen));
+        float h = std::max(10.0f, 50 + size_noise(gen));
+        float x2 = std::min(x1 + w, img_w);
+        float y2 = std::min(y1 + h, img_h);
+        bboxes.emplace_back(x1, y1, x2, y2, score_dist(gen));
+    }
+    return bboxes;
+}
+
+void testPerformance(int data_size, bool is_clustered) {
+    std::vector<BBox> bboxes = is_clustered
+        ? generateClusteredBBoxes(data_size)
+        : generateRandomBBoxes(data_size);
+    float iou_thresh = 0.5;
+
+    auto testSort = [&](const std::string& name, void (*sortFunc)(std::vector<BBox>&, int, int)) {
+        auto start = std::chrono::high_resolution_clock::now();
+        nms(bboxes, iou_thresh, sortFunc); 
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> elapsed = end - start;
+        std::cout << name << "（" << (is_clustered ? "聚集分布" : "随机分布")
+                  << ", 数据量" << data_size << "）："
+                  << elapsed.count() * 1000 << " ms" << std::endl;
+    };
+
+    testSort("快速排序", quickSort);
+    testSort("归并排序", mergeSort);
+    testSort("冒泡排序", [](std::vector<BBox>& arr, int, int) { bubbleSort(arr); });
+    testSort("选择排序", [](std::vector<BBox>& arr, int, int) { selectionSort(arr); });
+    std::cout << "------------------------" << std::endl;
+}
+
+int main() {
+    std::vector<int> sizes = {100, 1000, 5000, 10000};
+    for (int size : sizes) {
+        testPerformance(size, false); 
+        testPerformance(size, true); 
+    }
+    return 0;
+}
