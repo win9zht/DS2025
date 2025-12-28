@@ -1,0 +1,184 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import pymysql
+
+#数据库连接
+conn = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="zzr060530",
+    database="library_db",
+    charset="utf8"
+)
+cursor = conn.cursor()
+
+#数据库操作
+def check_user(username, password):
+    sql = "SELECT id FROM users WHERE username=%s AND password=%s"
+    cursor.execute(sql, (username, password))
+    return cursor.fetchone()
+
+def book_exists(title, author):
+    sql = "SELECT id FROM books WHERE title=%s AND author=%s"
+    cursor.execute(sql, (title, author))
+    return cursor.fetchone()
+
+def add_book(title, author):
+    sql = "INSERT INTO books(title, author) VALUES (%s, %s)"
+    cursor.execute(sql, (title, author))
+    conn.commit()
+
+def update_book(book_id, title, author):
+    sql = "UPDATE books SET title=%s, author=%s WHERE id=%s"
+    cursor.execute(sql, (title, author, book_id))
+    conn.commit()
+
+def delete_book(book_id):
+    sql = "DELETE FROM books WHERE id=%s"
+    cursor.execute(sql, (book_id,))
+    conn.commit()
+
+def get_all_books():
+    sql = "SELECT id, title, author FROM books"
+    cursor.execute(sql)
+    return cursor.fetchall()
+
+#主界面
+def show_main():
+    main = tk.Toplevel()
+    main.title("图书管理系统")
+    main.geometry("700x450")
+
+    #输入区
+    frame_top = tk.Frame(main)
+    frame_top.pack(pady=10)
+
+    tk.Label(frame_top, text="书名").grid(row=0, column=0)
+    entry_title = tk.Entry(frame_top, width=25)
+    entry_title.grid(row=0, column=1, padx=5)
+
+    tk.Label(frame_top, text="作者").grid(row=1, column=0)
+    entry_author = tk.Entry(frame_top, width=25)
+    entry_author.grid(row=1, column=1, padx=5)
+
+    #表格
+    frame_mid = tk.Frame(main)
+    frame_mid.pack(fill="both", expand=True)
+
+    tree = ttk.Treeview(
+        frame_mid,
+        columns=("id", "title", "author"),
+        show="headings"
+    )
+    tree.heading("id", text="编号")
+    tree.heading("title", text="书名")
+    tree.heading("author", text="作者")
+
+    tree.column("id", width=80, anchor="center")
+    tree.column("title", width=250)
+    tree.column("author", width=200)
+
+    tree.pack(fill="both", expand=True)
+
+    #刷新表格
+    def refresh():
+        for row in tree.get_children():
+            tree.delete(row)
+        for book in get_all_books():
+            tree.insert("", "end", values=book)
+
+    refresh()
+
+    #添加 / 修改
+    def submit():
+        title = entry_title.get().strip()
+        author = entry_author.get().strip()
+
+        if not title or not author:
+            messagebox.showwarning("提示", "书名和作者不能为空")
+            return
+
+        # 修改模式
+        if hasattr(entry_title, "book_id"):
+            update_book(entry_title.book_id, title, author)
+            del entry_title.book_id
+            messagebox.showinfo("成功", "图书信息已修改")
+            entry_title.delete(0, tk.END)
+            entry_author.delete(0, tk.END)
+            refresh()
+            return
+
+        # 添加模式（检查重复）
+        if book_exists(title, author):
+            messagebox.showwarning("提示", "该图书已存在，禁止重复添加")
+            return
+
+        add_book(title, author)
+        messagebox.showinfo("成功", "图书已添加")
+        entry_title.delete(0, tk.END)
+        entry_author.delete(0, tk.END)
+        refresh()
+
+    #删除
+    def delete_selected():
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择一本图书")
+            return
+        book_id = tree.item(selected[0])["values"][0]
+        delete_book(book_id)
+        refresh()
+
+    #加载修改
+    def load_selected():
+        selected = tree.selection()
+        if not selected:
+            messagebox.showwarning("提示", "请先选择一本图书")
+            return
+        book_id, title, author = tree.item(selected[0])["values"]
+
+        entry_title.delete(0, tk.END)
+        entry_title.insert(0, title)
+
+        entry_author.delete(0, tk.END)
+        entry_author.insert(0, author)
+
+        entry_title.book_id = book_id
+
+    #按钮区
+    frame_bottom = tk.Frame(main)
+    frame_bottom.pack(pady=10)
+
+    tk.Button(frame_bottom, text="添加 / 保存修改", width=15, command=submit).grid(row=0, column=0, padx=5)
+    tk.Button(frame_bottom, text="选中图书修改", width=15, command=load_selected).grid(row=0, column=1, padx=5)
+    tk.Button(frame_bottom, text="选中图书删除", width=15, command=delete_selected).grid(row=0, column=2, padx=5)
+
+#登录界面
+def show_login():
+    login = tk.Toplevel()
+    login.title("用户登录")
+    login.geometry("300x200")
+
+    tk.Label(login, text="用户名").pack(pady=5)
+    entry_user = tk.Entry(login)
+    entry_user.pack()
+
+    tk.Label(login, text="密码").pack(pady=5)
+    entry_pass = tk.Entry(login, show="*")
+    entry_pass.pack()
+
+    def login_action():
+        if check_user(entry_user.get(), entry_pass.get()):
+            messagebox.showinfo("成功", "登录成功")
+            login.destroy()
+            show_main()
+        else:
+            messagebox.showerror("错误", "用户名或密码错误")
+
+    tk.Button(login, text="登录", command=login_action).pack(pady=10)
+
+#程序入口
+root = tk.Tk()
+root.withdraw()
+show_login()
+root.mainloop()
